@@ -1,0 +1,19 @@
+# build output
+Debug/
+Release/
+build/
+*.o
+*.d
+*.su
+*.cyclo
+*.elf
+*.bin
+*.hex
+*.map
+*.list
+
+# IDE / OS
+.settings/
+.metadata/
+*.launch
+.DS_Store

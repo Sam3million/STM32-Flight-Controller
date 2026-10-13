@@ -22,6 +22,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "ili9341.h"
+#include "mpu6050.h"
+#include "util.h"
+#include "ui_elements.h"
 #include "spleen_fonts.h"
 #include <stdio.h>
 /* USER CODE END Includes */
@@ -43,6 +46,8 @@
 
 /* Private variables ---------------------------------------------------------*/
 
+I2C_HandleTypeDef hi2c1;
+
 SPI_HandleTypeDef hspi1;
 
 UART_HandleTypeDef huart3;
@@ -57,6 +62,7 @@ static void MPU_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -109,13 +115,15 @@ int main(void)
   MX_GPIO_Init();
   MX_SPI1_Init();
   MX_USART3_UART_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
   ILI9341_Init(&hspi1);
   ILI9341_SetFont(&Font_Spleen_16x32);
+  MPU6050_Init(&hi2c1);
 
   ILI9341_FillScreen(ILI9341_WHITE);
 
-  ILI9341_DrawStringScaled(40, 20, "Primitives Test", 1, 	ILI9341_BLACK, 		ILI9341_WHITE);
+  /*ILI9341_DrawStringScaled(40, 20, "Primitives Test", 1, 	ILI9341_BLACK, 		ILI9341_WHITE);
   ILI9341_DrawLine(40, 52, 280, 52, ILI9341_BLACK);
   ILI9341_DrawRect(20, 180, 80, 220, ILI9341_BLACK);
   ILI9341_DrawShadedRect(100, 220, 160, 180, ILI9341_BLACK, ILI9341_GREEN);
@@ -133,7 +141,37 @@ int main(void)
   ILI9341_DrawShadedCircle(center, 20, ILI9341_BLACK, ILI9341_RED);
 
   ILI9341_DrawLine(240, 100, 280, 220, ILI9341_BLACK);
-  ILI9341_DrawLine(280, 100, 240, 220, ILI9341_BLACK);
+  ILI9341_DrawLine(280, 100, 240, 220, ILI9341_BLACK);*/
+
+  // Accelerometer test:
+  ILI9341_DrawStringScaled(40, 20, "MPU6050 Test", 1, 	ILI9341_BLACK, 		ILI9341_WHITE);
+  ILI9341_DrawLine(40, 52, 280, 52, ILI9341_BLACK);
+
+  Text accelerationBox;
+  Text_Init(&accelerationBox, 8, 60, 1, 26, &Font_Spleen_8x16, ILI9341_BLACK, ILI9341_WHITE);
+  Text gyroBox;
+  Text_Init(&gyroBox, 8, 76, 1, 33, &Font_Spleen_8x16, ILI9341_BLACK, ILI9341_WHITE);
+  Text tempBox;
+  Text_Init(&tempBox, 8, 92, 1, 12, &Font_Spleen_8x16, ILI9341_BLACK, ILI9341_WHITE);
+
+  Text descBox;
+  Text_Init(&descBox, 8, 150, 1, 64, &Font_Spleen_8x16, ILI9341_BLACK, ILI9341_WHITE);
+  Text_SetText(&descBox, "This is a test of the MPU6050 IMU\nmeasurements.");
+  Text_Draw(&descBox);
+
+  float3 acceleration;
+  float temp;
+  float3 gyro;
+  char ax[12], ay[12], az[12], line[48];
+
+  uint32_t last_display_update = 0;
+  const uint32_t display_interval = 16; // Update display every 200 ms
+
+  // Filtered values for smoothing
+  float3 smooth_acc = {0};
+  float smooth_temp = 0;
+  float3 smooth_gyro = {0};
+  float alpha = 0.1f; // Smoothing factor (0.0 = max smooth/slow, 1.0 = raw/no filter)
 
   /* USER CODE END 2 */
 
@@ -144,8 +182,46 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
-	  HAL_Delay(1000);
+	  MPU6050_GetSensorData(&acceleration, &temp, &gyro);
+
+	  // Apply Exponential Moving Average (EMA) filter
+	  smooth_acc.x = (alpha * acceleration.x) + ((1.0f - alpha) * smooth_acc.x);
+	  smooth_acc.y = (alpha * acceleration.y) + ((1.0f - alpha) * smooth_acc.y);
+	  smooth_acc.z = (alpha * acceleration.z) + ((1.0f - alpha) * smooth_acc.z);
+
+	  smooth_gyro.x = (alpha * gyro.x) + ((1.0f - alpha) * smooth_gyro.x);
+	  smooth_gyro.y = (alpha * gyro.y) + ((1.0f - alpha) * smooth_gyro.y);
+	  smooth_gyro.z = (alpha * gyro.z) + ((1.0f - alpha) * smooth_gyro.z);
+
+	  smooth_temp = (alpha * temp) + ((1.0f - alpha) * smooth_temp);
+
+	  // Check if it's time to update the screen (non-blocking delay)
+	  uint32_t current_time = HAL_GetTick();
+	  if ((current_time - last_display_update) >= display_interval)
+	  {
+		  last_display_update = current_time;
+
+		  FormatFixed(ax, sizeof ax, smooth_acc.x, 2);
+		  FormatFixed(ay, sizeof ay, smooth_acc.y, 2);
+		  FormatFixed(az, sizeof az, smooth_acc.z, 2);
+		  snprintf(line, sizeof line, "ACC %6s %6s %6s g", ax, ay, az);
+		  Text_SetText(&accelerationBox, line);
+		  Text_Draw(&accelerationBox);
+
+		  FormatFixed(ax, sizeof ax, smooth_gyro.x, 2);
+		  FormatFixed(ay, sizeof ay, smooth_gyro.y, 2);
+		  FormatFixed(az, sizeof az, smooth_gyro.z, 2);
+		  snprintf(line, sizeof line, "GYR %7s %7s %7s deg/s", ax, ay, az);
+		  Text_SetText(&gyroBox, line);
+		  Text_Draw(&gyroBox);
+
+		  FormatFixed(ax, sizeof ax, smooth_temp, 2);
+		  snprintf(line, sizeof line, "TMP %7s C", ax);
+		  Text_SetText(&tempBox, line);
+		  Text_Draw(&tempBox);
+	  }
+
+	  HAL_Delay(10); // Keep sampling the sensor fast
   }
   /* USER CODE END 3 */
 }
@@ -206,6 +282,54 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.Timing = 0x00B03FDB;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Analogue filter
+  */
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Digital filter
+  */
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
 }
 
 /**

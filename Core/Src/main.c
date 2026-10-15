@@ -25,6 +25,7 @@
 #include "mpu6050.h"
 #include "util.h"
 #include "ui_elements.h"
+#include "app_config.h"
 #include "spleen_fonts.h"
 #include <stdio.h>
 /* USER CODE END Includes */
@@ -50,6 +51,8 @@ I2C_HandleTypeDef hi2c1;
 
 SPI_HandleTypeDef hspi1;
 
+TIM_HandleTypeDef htim2;
+
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
@@ -63,6 +66,7 @@ static void MX_GPIO_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -74,6 +78,34 @@ int __io_putchar(int ch)
 	HAL_UART_Transmit(&huart3, (uint8_t*)&ch, 1, HAL_MAX_DELAY);
 	return ch;
 }
+
+typedef struct { float3 acc, gyro; float temp; int count; } SensorAverage;
+
+static inline void SensorAverage_Add(SensorAverage* a, float3 acc, float3 gyro, float temp)
+{
+	a->acc.x += acc.x;   a->acc.y += acc.y;   a->acc.z += acc.z;
+	a->gyro.x += gyro.x; a->gyro.y += gyro.y; a->gyro.z += gyro.z;
+	a->temp += temp;
+	a->count++;
+}
+
+static inline void SensorAverage_Take(SensorAverage* a, float3* acc, float3* gyro, float* temp)
+{
+	float inv = (a->count > 0) ? 1.0f / a->count : 0.0f;
+	acc->x = a->acc.x * inv;   acc->y = a->acc.y * inv;   acc->z = a->acc.z * inv;
+	gyro->x = a->gyro.x * inv; gyro->y = a->gyro.y * inv; gyro->z = a->gyro.z * inv;
+	*temp = a->temp * inv;
+	*a = (SensorAverage){0};
+}
+
+static float DeltaSeconds(uint32_t* last)
+{
+	uint32_t now = __HAL_TIM_GET_COUNTER(&htim2);
+	float dt = (float)(now - *last) * 1e-6f;
+	*last = now;
+	return dt;
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -116,62 +148,23 @@ int main(void)
   MX_SPI1_Init();
   MX_USART3_UART_Init();
   MX_I2C1_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   ILI9341_Init(&hspi1);
   ILI9341_SetFont(&Font_Spleen_16x32);
-  MPU6050_Init(&hi2c1);
 
-  ILI9341_FillScreen(ILI9341_WHITE);
+  Attitude attitude;
+  MPU6050_Init(&hi2c1, &attitude);
 
-  /*ILI9341_DrawStringScaled(40, 20, "Primitives Test", 1, 	ILI9341_BLACK, 		ILI9341_WHITE);
-  ILI9341_DrawLine(40, 52, 280, 52, ILI9341_BLACK);
-  ILI9341_DrawRect(20, 180, 80, 220, ILI9341_BLACK);
-  ILI9341_DrawShadedRect(100, 220, 160, 180, ILI9341_BLACK, ILI9341_GREEN);
-  ushort2 a = {20, 160};
-  ushort2 b = {80, 160};
-  ushort2 c = {50, 100};
-  ILI9341_DrawTri(a, b, c, ILI9341_BLACK);
-  a.x = 100;
-  b.x = 160;
-  c.x = 130;
-  ILI9341_DrawShadedTri(a, b, c, ILI9341_BLACK, ILI9341_CYAN);
-  ushort2 center = {200, 130};
-  ILI9341_DrawCircle(center, 20, ILI9341_BLACK);
-  center.y = 200;
-  ILI9341_DrawShadedCircle(center, 20, ILI9341_BLACK, ILI9341_RED);
+  FlightUI flightUI;
+  FlightUI_Init(&flightUI, &attitude, FILTER_NAME);
 
-  ILI9341_DrawLine(240, 100, 280, 220, ILI9341_BLACK);
-  ILI9341_DrawLine(280, 100, 240, 220, ILI9341_BLACK);*/
-
-  // Accelerometer test:
-  ILI9341_DrawStringScaled(40, 20, "MPU6050 Test", 1, 	ILI9341_BLACK, 		ILI9341_WHITE);
-  ILI9341_DrawLine(40, 52, 280, 52, ILI9341_BLACK);
-
-  Text accelerationBox;
-  Text_Init(&accelerationBox, 8, 60, 1, 26, &Font_Spleen_8x16, ILI9341_BLACK, ILI9341_WHITE);
-  Text gyroBox;
-  Text_Init(&gyroBox, 8, 76, 1, 33, &Font_Spleen_8x16, ILI9341_BLACK, ILI9341_WHITE);
-  Text tempBox;
-  Text_Init(&tempBox, 8, 92, 1, 12, &Font_Spleen_8x16, ILI9341_BLACK, ILI9341_WHITE);
-
-  Text descBox;
-  Text_Init(&descBox, 8, 150, 1, 64, &Font_Spleen_8x16, ILI9341_BLACK, ILI9341_WHITE);
-  Text_SetText(&descBox, "This is a test of the MPU6050 IMU\nmeasurements.");
-  Text_Draw(&descBox);
-
-  float3 acceleration;
-  float temp;
-  float3 gyro;
-  char ax[12], ay[12], az[12], line[48];
-
-  uint32_t last_display_update = 0;
-  const uint32_t display_interval = 16; // Update display every 200 ms
-
-  // Filtered values for smoothing
-  float3 smooth_acc = {0};
-  float smooth_temp = 0;
-  float3 smooth_gyro = {0};
-  float alpha = 0.1f; // Smoothing factor (0.0 = max smooth/slow, 1.0 = raw/no filter)
+  SensorAverage avg = {0};
+  float3 acc, gyro, accAvg, gyroAvg;
+  float temp, tempAvg;
+  uint32_t lastTime = __HAL_TIM_GET_COUNTER(&htim2);
+  uint32_t lastDisplay = 0;
+  HAL_TIM_Base_Start(&htim2);
 
   /* USER CODE END 2 */
 
@@ -182,46 +175,19 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  MPU6050_GetSensorData(&acceleration, &temp, &gyro);
 
-	  // Apply Exponential Moving Average (EMA) filter
-	  smooth_acc.x = (alpha * acceleration.x) + ((1.0f - alpha) * smooth_acc.x);
-	  smooth_acc.y = (alpha * acceleration.y) + ((1.0f - alpha) * smooth_acc.y);
-	  smooth_acc.z = (alpha * acceleration.z) + ((1.0f - alpha) * smooth_acc.z);
+	  MPU6050_GetSensorData(&acc, &temp, &gyro);
+	  float dt = DeltaSeconds(&lastTime);
+	  //MPU6050_ComplementaryFilter(&attitude, acceleration, gyro, dt);
+	  FILTER_UPDATE(&attitude, acc, gyro, dt);
+	  SensorAverage_Add(&avg, acc, gyro, temp);
 
-	  smooth_gyro.x = (alpha * gyro.x) + ((1.0f - alpha) * smooth_gyro.x);
-	  smooth_gyro.y = (alpha * gyro.y) + ((1.0f - alpha) * smooth_gyro.y);
-	  smooth_gyro.z = (alpha * gyro.z) + ((1.0f - alpha) * smooth_gyro.z);
-
-	  smooth_temp = (alpha * temp) + ((1.0f - alpha) * smooth_temp);
-
-	  // Check if it's time to update the screen (non-blocking delay)
-	  uint32_t current_time = HAL_GetTick();
-	  if ((current_time - last_display_update) >= display_interval)
+	  if (HAL_GetTick() - lastDisplay >= DISPLAY_INTERVAL_MS)
 	  {
-		  last_display_update = current_time;
-
-		  FormatFixed(ax, sizeof ax, smooth_acc.x, 2);
-		  FormatFixed(ay, sizeof ay, smooth_acc.y, 2);
-		  FormatFixed(az, sizeof az, smooth_acc.z, 2);
-		  snprintf(line, sizeof line, "ACC %6s %6s %6s g", ax, ay, az);
-		  Text_SetText(&accelerationBox, line);
-		  Text_Draw(&accelerationBox);
-
-		  FormatFixed(ax, sizeof ax, smooth_gyro.x, 2);
-		  FormatFixed(ay, sizeof ay, smooth_gyro.y, 2);
-		  FormatFixed(az, sizeof az, smooth_gyro.z, 2);
-		  snprintf(line, sizeof line, "GYR %7s %7s %7s deg/s", ax, ay, az);
-		  Text_SetText(&gyroBox, line);
-		  Text_Draw(&gyroBox);
-
-		  FormatFixed(ax, sizeof ax, smooth_temp, 2);
-		  snprintf(line, sizeof line, "TMP %7s C", ax);
-		  Text_SetText(&tempBox, line);
-		  Text_Draw(&tempBox);
+		  lastDisplay = HAL_GetTick();
+		  SensorAverage_Take(&avg, &accAvg, &gyroAvg, &tempAvg);
+		  FlightUI_Update(&flightUI, accAvg, gyroAvg, tempAvg);
 	  }
-
-	  HAL_Delay(10); // Keep sampling the sensor fast
   }
   /* USER CODE END 3 */
 }
@@ -377,6 +343,51 @@ static void MX_SPI1_Init(void)
   /* USER CODE BEGIN SPI1_Init 2 */
 
   /* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 239;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 4294967295;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
 
 }
 

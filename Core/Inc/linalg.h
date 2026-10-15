@@ -8,6 +8,9 @@
 #ifndef INC_LINALG_H_
 #define INC_LINALG_H_
 
+#define RAD2DEG 57.2957795f
+#define DEG2RAD 0.0174532925f
+
 typedef struct
 {
 	uint16_t x, y;
@@ -20,7 +23,19 @@ typedef struct
 
 typedef struct
 {
+	float x, y;
+} float2;
+
+typedef struct
+{
 	float x, y, z;
 } float3;
+
+static void float3_scale(float3* v, float s)
+{
+	v->x *= s;
+	v->y *= s;
+	v->z *= s;
+}
 
 #endif /* INC_LINALG_H_ */

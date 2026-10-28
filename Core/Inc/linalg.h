@@ -8,6 +8,8 @@
 #ifndef INC_LINALG_H_
 #define INC_LINALG_H_
 
+#include <stdint.h>
+
 #define RAD2DEG 57.2957795f
 #define DEG2RAD 0.0174532925f
 

@@ -23,7 +23,7 @@ static Kalman2Filter pitchFilter2;
 static void MPU6050_Kalman1_Init(Kalman1Filter* k, float processNoise, float measurementNoise);
 static void MPU6050_Kalman2_Init(Kalman2Filter* k, float qAngle, float qBias, float rMeasure);
 
-void MPU6050_Init(I2C_HandleTypeDef* hi2c, Attitude* attitude)
+void MPU6050_Init(I2C_HandleTypeDef* hi2c)
 {
 	imuI2C = hi2c;
 	MPU6050_WriteByte(MPU6050_PWR_MGMT_1, 0);
@@ -119,10 +119,6 @@ void MPU6050_Init(I2C_HandleTypeDef* hi2c, Attitude* attitude)
 	float3_scale(&tempAccelOffset, inv);
 	tempAccelOffset.z -= 1;
 	accelOffset = tempAccelOffset;
-
-	attitude->roll = 0.0f;
-	attitude->pitch = 0.0f;
-	attitude->initialized = 0;
 }
 
 uint8_t MPU6050_ReadByte(uint16_t address)
@@ -163,10 +159,10 @@ void MPU6050_GetSensorData(float3* accel, float* temp, float3* gyro)
 	accel->x = ax * accelScale - accelOffset.x;
 	accel->y = ay * accelScale - accelOffset.y;
 	accel->z = az * accelScale - accelOffset.z;
-	*temp   = t / 340.0f + 36.53f;
-	gyro->x  = gx * gyroScale - gyroOffset.x;
-	gyro->y  = gy * gyroScale - gyroOffset.y;
-	gyro->z  = gz * gyroScale - gyroOffset.z;
+	*temp = t / 340.0f + 36.53f;
+	gyro->x = gx * gyroScale - gyroOffset.x;
+	gyro->y = gy * gyroScale - gyroOffset.y;
+	gyro->z = gz * gyroScale - gyroOffset.z;
 }
 
 float2 MPU6050_AccelAttitude(float3 accel)
@@ -190,8 +186,7 @@ void MPU6050_ComplementaryFilter(Attitude* attitude, float3 accel, float3 gyro, 
 		return;
 	}
 
-	const float tau = 0.5f;
-	const float alpha = tau / (tau + dt);
+	const float alpha = 0.95f;
 
 	attitude->roll = alpha * (attitude->roll - gyro.x * dt) + (1.0f - alpha) * accelAttitude.x;
 	attitude->pitch = alpha * (attitude->pitch + gyro.y * dt) + (1.0f - alpha) * accelAttitude.y;
@@ -277,4 +272,3 @@ void MPU6050_Kalman2Filter(Attitude* attitude, float3 accel, float3 gyro, float 
 	attitude->roll = rollFilter2.angle;
 	attitude->pitch = pitchFilter2.angle;
 }
-

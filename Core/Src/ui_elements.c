@@ -141,6 +141,7 @@ void FlightUI_Init(FlightUI* ui, const Attitude* attitude, const char* title)
 	Text_Init(&ui->gyroText, 8, 76, 1, 33, &Font_Spleen_8x16, ILI9341_BLACK, ILI9341_WHITE);
 	Text_Init(&ui->tempText, 8, 92, 1, 15, &Font_Spleen_8x16, ILI9341_BLACK, ILI9341_WHITE);
 	Text_Init(&ui->angleText, 7, 108, 1, 33, &Font_Spleen_8x16, ILI9341_BLACK, ILI9341_WHITE);
+	Text_Init(&ui->fpsText, 7, 124, 1, 15, &Font_Spleen_8x16, ILI9341_BLACK, ILI9341_WHITE);
 	AttitudeDisplay_Init(&ui->horizon, attitude, 160, 180, 40);
 }
 
@@ -173,13 +174,14 @@ static void Vec3Line(Text* box, const char* label, float3 v, uint8_t decimals, i
 	Text_Draw(box);
 }
 
-void FlightUI_Update(FlightUI* ui, float3 acc, float3 gyro, float temp)
+void FlightUI_Update(FlightUI* ui, float3 acc, float3 gyro, float temp, uint32_t fps)
 {
 	Vec3Line(&ui->accText, "ACC", acc, 2, 6, "g");
 	Vec3Line(&ui->gyroText, "GYR", gyro, 1, 7, "deg/s");
 	Vec1Line(&ui->tempText, "TEMP", temp, 1, 6, "C");
 	float2 attitudeVals = {ui->horizon.attitude->roll, ui->horizon.attitude->pitch};
 	Vec2Line(&ui->angleText, "ROLL+PITCH", attitudeVals, 1, 6, "deg");
+	Vec1Line(&ui->fpsText, "FPS", fps, 0, 3, "");
 
 	AttitudeDisplay_Draw(&ui->horizon);
 }

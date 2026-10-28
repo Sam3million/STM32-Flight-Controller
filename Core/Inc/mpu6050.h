@@ -48,7 +48,7 @@ typedef struct
 	uint8_t initialized;
 } Kalman2Filter;
 
-void MPU6050_Init(I2C_HandleTypeDef* hi2c, Attitude* attitude);
+void MPU6050_Init(I2C_HandleTypeDef* hi2c);
 
 uint8_t MPU6050_ReadByte(uint16_t address);
 

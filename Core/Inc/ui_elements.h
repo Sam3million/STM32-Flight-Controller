@@ -36,7 +36,7 @@ typedef struct
 } AttitudeDisplay;
 
 typedef struct {
-	Text accText, gyroText, tempText, angleText, fpsText;
+	Text accText, gyroText, tempText, angleText, fpsText, cmdRollText;
 	AttitudeDisplay horizon;
 } FlightUI;
 
@@ -49,6 +49,6 @@ void AttitudeDisplay_Init(AttitudeDisplay* display, Attitude* attitude, uint16_t
 void AttitudeDisplay_Draw(AttitudeDisplay* display);
 
 void FlightUI_Init(FlightUI* ui, const Attitude* attitude, const char* title);
-void FlightUI_Update(FlightUI* ui, float3 acc, float3 gyro, float temp, uint32_t fps);
+void FlightUI_Update(FlightUI* ui, float3 acc, float3 gyro, float temp, uint32_t fps, float commandRoll);
 
 #endif /* INC_UI_ELEMENTS_H_ */

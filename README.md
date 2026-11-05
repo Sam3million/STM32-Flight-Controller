@@ -1,10 +1,11 @@
 # STM32 Flight Controller and Graphic Display
 
-![Main Photo](/docs/primitives.jpg)
+![Main Photo](/docs/thumbnail.png)
 
-This is an embedded flight controller and display project I did using an STM32H753ZI, an MPU-6050 IMU, and an ILI9341 Display.
+This is an embedded flight controller and display project I created using an STM32H753ZI, an MPU-6050 IMU, and an ILI9341 Display.
 
 The wiring is as follows:
+
 Display
 - SPI SCK	-> PA5 (D13 on the Nucleo's ST ZIO connectors)
 - CS		-> PD4 (D54)
@@ -15,14 +16,14 @@ Display
 - VCC		-> 3.3V
 
 MPU-6050
--TBD
+- I2C SCL -> PB6
+- I2C SDA -> PB7
 
 ## Status
-Currently done: display driver, primitive and font rendering, measurements)
-Planned: IMU, filter, PID, FreeRTOS)
+Finished: Display driver, primitive and font rendering, measurements, IMU, filter, PID, FreeRTOS.
 
 ## Results
--TBD
+Read a [detailed post about the project](https://sam3million.github.io/engineering/2026/10/09/stm32-flight-controller.html).
 
 ## Build
 This project was built using Cube STM32CubeMX and STM32CubeIDE 2.20 on macOS.
@@ -33,6 +34,3 @@ This project was built using Cube STM32CubeMX and STM32CubeIDE 2.20 on macOS.
 
 ## License
 MIT License
-
-## Blog Post
-Read a detailed post about the project: LINK TBD.
